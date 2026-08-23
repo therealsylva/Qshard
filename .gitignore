@@ -1,0 +1,10 @@
+/target/
+/.env
+*.key
+*.token
+*.qrc
+*.qshare
+qchain-blue-data/
+qchain-node-data/
+qshard-output/
+coverage/

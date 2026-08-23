@@ -1,139 +1,124 @@
-# Qshard
+# Qchain and Qshard
 
-<div align="center">
+Qchain is a lightweight credential-storage network. Qshard is its offline cryptographic core and command-line client. A credential is encrypted, split into five Shamir shares, and recoverable from any three. Qchain places two replicas of each share on ten distinct storage nodes.
 
-[![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Crates.io](https://img.shields.io/crates/v/qshard.svg)](https://crates.io/crates/qshard)
+This repository is a Rust workspace containing the complete client, storage-node, Blue-coordinator, registry, protocol, and administration source.
 
-**A CLI tool for decentralized credential sharding.**
+> Security status: this implementation is production-oriented, but it has not received an independent cryptographic or application-security audit. Do not use it for irreplaceable live credentials until an external audit and deployment review are complete.
 
-Split a secret into 5 encrypted shards. Any 3 shards, combined with a recovery token, are sufficient to restore the original secret.
+## Network roles
 
-</div>
+| Role | Responsibility | Curated |
+|---|---|---|
+| Black | Uses the client but stores no shares for other users | No |
+| Grey | Runs a casual storage node | No |
+| White | Runs a high-uptime storage node with a curator-issued role certificate | Yes |
+| Blue | Routes ephemeral share traffic, maintains the replicated registry, monitors availability, and coordinates repair | Yes |
 
----
+Every credential set has exactly ten replicas on ten different nodes:
 
-## About
+- Share 1: one White and one Grey replica
+- Share 2: one White and one Grey replica
+- Shares 3, 4, and 5: two Grey replicas each
+- The two White nodes always hold different share indices
 
-`qshard` is a command-line utility that implements [Shamir's Secret Sharing](https://en.wikipedia.org/wiki/Shamir%27s_secret_sharing) to provide a robust method for securing sensitive credentials like passwords, API keys, or recovery phrases.
+Blue nodes never persist credential shares. Registry mutations are replicated with Raft; the network does not use peer-to-peer gossip, a blockchain, or an incentive token.
 
-Instead of storing your entire secret in one place, you can distribute encrypted `.qshard` files across multiple locations (different computers, cloud storage, USB drives). An attacker would need to compromise multiple locations and the recovery token to reconstruct your secret.
+## Binaries
 
-### Key Features
+| Binary | Purpose |
+|---|---|
+| `qshard` | Offline split, recover, verify, inspect, and REPL operations |
+| `qchain` | Network store, recover, status, delete, list, and REPL operations |
+| `qchain-node` | Grey or White persistent storage service |
+| `qchain-blue` | Blue coordinator, replicated registry, monitoring, and repair service |
+| `qchain-admin` | Key generation, certificates, signed directories, and Raft membership |
 
--   **Threshold Recovery**: Uses a (3, 5) Shamir scheme. Any 3 out of the 5 generated shards are enough to recover the secret.
--   **Token-Based Encryption**: All shards are encrypted with AES-256-GCM. A unique **Recovery Token** is required to decrypt and use them, preventing recovery if the files are acquired without the token.
--   **Custom Identifiers**: Name your shard sets for easy organization (e.g., `qs-gmail_backup-1.qshard`).
--   **Directory-Aware**: The `recover`, `status`, `verify`, and `purge` commands can operate on an entire directory of shards, not just individual files.
--   **Secure Memory**: Sensitive data is securely wiped from memory after use.
--   **Cross-Platform**: Built in Rust, it runs on Linux, macOS, and Windows.
+All interactive output is plain, professional terminal text. Both client binaries support `--json` for automation and retain REPL history in memory only.
 
-## Installation
+## Build
 
-### From Source
-
-Ensure you have [Rust](https://rustup.rs/) installed (version 1.70 or newer).
-
-```bash
-git clone https://github.com/therealsylva/qshard.git
-cd qshard
-cargo build --release
-```
-
-The compiled binary will be located at `target/release/qshard`.
-
-### From Crates.io (Once Published)
+Install the stable Rust toolchain, then run:
 
 ```bash
-cargo install qshard
+cargo build --release --locked
+cargo test --workspace --locked
 ```
 
-## Usage
+Release binaries are written to `target/release/`.
 
-### Create Shards
+## Offline Qshard example
 
-Splits a secret into 5 `.qshard` files in the specified output directory. You can provide a custom identifier for the shard set.
+Split a credential into five encrypted shares and a passphrase-protected recovery capsule:
 
 ```bash
-$ qshard create --output-dir ./secrets --id "gmail_account"
-Enter secret to shard: [hidden]
-  [00:00:00] [########################################] 5/5 (0s)
-
-🔑 Recovery Token: QS-TNK-qL9bX4wP...[truncated]
-⚠️  Save this token! It is required for recovery.
+qshard split \
+  --input ./credential.txt \
+  --output-dir ./credential-shares \
+  --network qchain-mainnet \
+  --recovery-mode per-credential
 ```
 
-This will create files like:
-- `qs-gmail_account-1.qshard`
-- `qs-gmail_account-2.qshard`
-- `...`
-
-### Recover Secret
-
-Restores the original secret using any 3 of the 5 shard files. You can point it to a directory containing the shards.
+Recover from any three shares:
 
 ```bash
-$ qshard recover ./secrets/
-Enter Recovery Token: [hidden]
-MySuperSecretPassword123!
+qshard recover \
+  --capsule ./credential-shares/<set-id>.recovery.qrc \
+  --manifest ./credential-shares/<set-id>.manifest.json \
+  --output ./recovered.txt \
+  ./credential-shares/<share-1>.qshare \
+  ./credential-shares/<share-2>.qshare \
+  ./credential-shares/<share-3>.qshare
 ```
 
-### Check Shard Status
+Run `qshard` or `qshard repl` for the interactive shell. Secrets are read from a hidden prompt when standard input is a terminal.
 
-Checks the validity and availability of a set of shards.
+For master recovery mode, pass the same protected capsule path on later splits; Qshard opens and reuses its seed instead of replacing it:
 
 ```bash
-$ qshard status ./secrets/
-Checking shard availability...
-✅ ./secrets/qs-gmail_account-1.qshard: Shard 1 is valid.
-✅ ./secrets/qs-gmail_account-3.qshard: Shard 3 is valid.
-✅ ./secrets/qs-gmail_account-5.qshard: Shard 5 is valid.
-
-✅ Recovery is possible with shards: [1, 3, 5]
+qshard split --recovery-mode master --capsule ./master.recovery.qrc --input ./credential.txt
 ```
 
-### Verify Recovery
+## Qchain client example
 
-Tests if recovery is possible without exposing the secret in your terminal.
+Production clients require a curator-signed Blue directory and at least one trusted curator public key:
 
 ```bash
-$ qshard verify ./secrets/
-Enter Recovery Token: [hidden]
-✅ Recovery is possible with these shards.
+qchain \
+  --directory ./qchain-blue-directory.json \
+  --curator-public-key <hex-public-key> \
+  store \
+  --input ./credential.txt \
+  --label primary-login \
+  --recovery-mode per-credential
 ```
 
-### Purge Shards
+The client saves its protected recovery capsule and local credential record before upload. Recovery writes the credential successfully before sending the deletion acknowledgement. With `--auto-reseed`, a replacement set is fully committed before the original set is retired.
 
-Securely overwrites and deletes shard files.
+Plain HTTP and unsigned Blue endpoints are rejected unless the explicit local-development flags are supplied.
 
-```bash
-$ qshard purge ./secrets/qs-gmail_account-1.qshard ./secrets/qs-gmail_account-2.qshard
-Purging...
-✅ Done.
-```
+## Security properties
 
-## Security Considerations
+- 3-of-5 Shamir secret sharing for arbitrary credentials up to 64 KiB
+- XChaCha20-Poly1305 encryption for every share, with authenticated metadata
+- Independent HKDF domains for share encryption and Ed25519 control signing
+- Argon2-protected recovery capsules, available per credential or as one master capsule
+- Signed, expiring operations with replay detection and idempotent retry handling
+- Curator-signed White certificates and Blue directories
+- TLS required by services and clients outside explicit development mode
+- Persistent retirement state, retryable deletion, integrity audits, and lost-replica repair
+- Quotas, capacity checks, request-size limits, and request rate limits
 
--   **The Recovery Token is Critical**: The recovery token is the master key to your secrets. Store it in a separate, secure location from your shard files. Losing the token means losing access to your secret forever.
--   **Minimum Secret Length**: For security, secrets shorter than 64 bytes are automatically padded with random data before sharding. This padding is removed during recovery.
+The recovery capsule remains the critical secret. Losing it and its passphrase makes recovery impossible; compromising both permits recovery and control operations. See [SECURITY.md](SECURITY.md) and [the architecture](docs/ARCHITECTURE.md) for the complete trust model.
 
-## How It Works
+## Documentation
 
-1.  **Input**: You provide a secret (e.g., a password).
-2.  **Padding**: The secret is padded to a minimum length of 64 bytes to ensure cryptographic security.
-3.  **Sharding**: The padded secret is split into 5 shares using Shamir's Secret Sharing. Any 3 of these shares can reconstruct the original padded secret.
-4.  **Encryption**: A 32-byte recovery token is generated. This token is used as an AES-256-GCM key to encrypt each of the 5 shares individually.
-5.  **Storage**: The encrypted shares are saved to `.qshard` files, which contain metadata like the share ID and original secret length.
-
-## Contributing
-
-Contributions are welcome! Please open an issue or submit a pull request.
+- [Architecture and invariants](docs/ARCHITECTURE.md)
+- [Protocol reference](docs/PROTOCOL.md)
+- [Deployment and operations](docs/OPERATIONS.md)
+- [Security policy and threat model](SECURITY.md)
+- [Contributing](CONTRIBUTING.md)
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
-
-## Author
-
-Created by [therealsylva](https://github.com/therealsylva).
+MIT. See [LICENSE](LICENSE).
