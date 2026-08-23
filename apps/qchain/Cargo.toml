@@ -1,0 +1,43 @@
+[package]
+name = "qchain-cli"
+description = "Professional command-line and interactive clients for Qchain and Qshard"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "qchain"
+path = "src/bin/qchain.rs"
+
+[[bin]]
+name = "qshard"
+path = "src/bin/qshard.rs"
+
+[dependencies]
+anyhow.workspace = true
+base64.workspace = true
+clap.workspace = true
+directories.workspace = true
+ed25519-dalek.workspace = true
+hex.workspace = true
+qchain-protocol = { path = "../../crates/qchain-protocol" }
+qshard-core = { path = "../../crates/qshard-core" }
+reqwest.workspace = true
+rpassword.workspace = true
+rustyline.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+shell-words.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+zeroize.workspace = true
+
+[lints]
+workspace = true

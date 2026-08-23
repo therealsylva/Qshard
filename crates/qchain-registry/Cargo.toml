@@ -1,0 +1,21 @@
+[package]
+name = "qchain-registry"
+description = "Placement, health and repair state machine for Qchain"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+chrono.workspace = true
+qchain-protocol = { path = "../qchain-protocol" }
+qshard-core = { path = "../qshard-core" }
+serde.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true
